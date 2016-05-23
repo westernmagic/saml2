@@ -7,6 +7,7 @@
  */
 class SAML2_SOAP extends SAML2_Binding
 {
+
     /**
      * Send a SAML 2 message using the SOAP binding.
      *
@@ -16,17 +17,24 @@ class SAML2_SOAP extends SAML2_Binding
      */
     public function send(SAML2_Message $message)
     {
-        header('Content-Type: text/xml', TRUE);
-        $outputFromIdp = '<?xml version="1.0" encoding="UTF-8"?>';
-        $outputFromIdp .= '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">';
-        $outputFromIdp .= '<SOAP-ENV:Body>';
-        $xmlMessage = $message->toSignedXML();
-        SAML2_Utils::getContainer()->debugMessage($xmlMessage, 'out');
-        $tempOutputFromIdp = $xmlMessage->ownerDocument->saveXML($xmlMessage);
-        $outputFromIdp .= $tempOutputFromIdp;
-        $outputFromIdp .= '</SOAP-ENV:Body>';
-        $outputFromIdp .= '</SOAP-ENV:Envelope>';
-        print($outputFromIdp);
+        
+        $envelope = '<soap-env:Envelope xmlns:soap-env="http://schemas.xmlsoap.org/soap/envelope/">'.
+                    '<soap-env:Header/><soap-env:Body /></soap-env:Envelope>';
+
+        $doc = new DOMDocument();
+        $doc->loadXML($envelope);
+        $soapHeader = $doc->getElementsByTagNameNS('http://schemas.xmlsoap.org/soap/envelope/', 'Header');
+        $soapBody = $doc->getElementsByTagNameNS('http://schemas.xmlsoap.org/soap/envelope/', 'Body');
+
+        if ($message->toSignedXML()->localName === 'Response') {
+            $response = new SAML2_XML_ecp_Response();
+            $response->AssertionConsumerServiceURL = $this->getDestination();
+            $response->toXML($soapHeader->item(0));
+        }
+
+        $soapBody->item(0)->appendChild($doc->importNode($message->toSignedXML(), true));
+        
+        print($doc->saveXML());
         exit(0);
     }
 
@@ -50,8 +58,9 @@ class SAML2_SOAP extends SAML2_Binding
         $xml = $document->firstChild;
         SAML2_Utils::getContainer()->debugMessage($xml, 'in');
         $results = SAML2_Utils::xpQuery($xml, '/soap-env:Envelope/soap-env:Body/*[1]');
+        $message = SAML2_Message::fromXML($results[0]);
+        $this->setDestination($message->getAssertionConsumerServiceURL());
 
-        return SAML2_Message::fromXML($results[0]);
+        return $message;
     }
-
 }
